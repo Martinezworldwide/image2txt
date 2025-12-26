@@ -104,6 +104,32 @@ select{
   transition: width .2s ease;
 }
 
+.result{
+  margin-top:14px;
+}
+.result-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px;
+}
+.result-title{
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .02em;
+  margin-bottom: 6px;
+}
+.result-answer{
+  font-size: 20px;
+  font-weight: 700;
+}
+.result-why{
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.muted{ color: var(--muted); }
+
 .output{
   margin-top:14px;
   background:var(--card);
@@ -139,5 +165,7 @@ textarea{
   color:var(--text);
   padding:12px;
   line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 footer{margin-top:12px;color:var(--muted)}
+
