@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image → Text (OCR)</title>
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Image → Plain Text</h1>
+      <p class="sub">Drag screenshots in. OCR runs locally in your browser.</p>
+    </header>
+
+    <section class="controls">
+      <label class="row">
+        <span>Language</span>
+        <select id="lang">
+          <option value="eng" selected>English (eng)</option>
+          <option value="spa">Spanish (spa)</option>
+          <option value="fra">French (fra)</option>
+          <option value="deu">German (deu)</option>
+          <option value="ita">Italian (ita)</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <span>Output formatting</span>
+        <select id="psm">
+          <option value="AUTO" selected>Auto (good default)</option>
+          <option value="SINGLE_BLOCK">Single block (paragraph)</option>
+          <option value="SINGLE_LINE">Single line</option>
+        </select>
+      </label>
+    </section>
+
+    <section id="dropzone" class="dropzone" tabindex="0" aria-label="Drop images here">
+      <input id="fileInput" type="file" accept="image/*" multiple hidden />
+      <div class="dropzone-inner">
+        <div class="big">Drop screenshots here</div>
+        <div class="small">or <button id="browseBtn" class="linkbtn" type="button">browse files</button></div>
+        <div class="hint">Tip: you can also paste an image (Cmd/Ctrl+V).</div>
+      </div>
+    </section>
+
+    <section class="status">
+      <div class="statusline">
+        <span id="statusText">Idle</span>
+        <span id="fileCount"></span>
+      </div>
+      <div class="progress">
+        <div id="bar" class="bar"></div>
+      </div>
+    </section>
+
+    <section class="output">
+      <div class="out-actions">
+        <button id="copyBtn" type="button">Copy</button>
+        <button id="downloadBtn" type="button">Download .txt</button>
+        <button id="clearBtn" type="button" class="ghost">Clear</button>
+      </div>
+      <textarea id="out" placeholder="Recognized text will appear here..."></textarea>
+    </section>
+
+    <footer>
+      <small>Runs in-browser with Tesseract.js. Accuracy depends on image quality.</small>
+    </footer>
+  </div>
+</body>
+</html>
