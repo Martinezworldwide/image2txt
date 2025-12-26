@@ -1,4 +1,6 @@
 // app.js
+
+// ---------- UI ----------
 const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("fileInput");
 const browseBtn = document.getElementById("browseBtn");
@@ -14,175 +16,293 @@ const clearBtn = document.getElementById("clearBtn");
 
 const langSel = document.getElementById("lang");
 const psmSel = document.getElementById("psm");
+const preprocessSel = document.getElementById("preprocess");
+const quizDetectSel = document.getElementById("quizDetect");
+
+const answerText = document.getElementById("answerText");
+const answerWhy = document.getElementById("answerWhy");
 
 let busy = false;
 
+// ---------- Helpers ----------
 function setStatus(text) {
   statusText.textContent = text;
 }
-
 function setProgress(pct) {
   const clamped = Math.max(0, Math.min(100, pct));
   bar.style.width = `${clamped}%`;
 }
-
+function setAnswer(ans, why) {
+  if (!ans) {
+    answerText.textContent = "—";
+    answerText.classList.add("muted");
+    answerWhy.textContent = "";
+    answerWhy.classList.add("muted");
+    return;
+  }
+  answerText.textContent = ans;
+  answerText.classList.remove("muted");
+  answerWhy.textContent = why || "";
+  answerWhy.classList.remove("muted");
+}
 function appendOutput(text) {
   if (!text) return;
   const separator = out.value.trim().length ? "\n\n---\n\n" : "";
   out.value += separator + text.trim();
 }
-
-function getPSMConfig() {
-  // Tesseract.js supports config variables; "tessedit_pageseg_mode" controls layout handling.
-  // Values are numeric in core tesseract, but tesseract.js accepts strings for some wrappers.
-  // We'll use safe defaults by mapping our menu to common numeric modes.
-  // 3 = AUTO, 6 = SINGLE_BLOCK, 7 = SINGLE_LINE
-  const choice = psmSel.value;
-  if (choice === "SINGLE_BLOCK") return { tessedit_pageseg_mode: "6" };
-  if (choice === "SINGLE_LINE") return { tessedit_pageseg_mode: "7" };
-  return { tessedit_pageseg_mode: "3" }; // AUTO
-}
-
-async function ocrFile(file, index, total) {
-  const lang = langSel.value;
-  setStatus(`Recognizing (${index + 1}/${total}): ${file.name}`);
-
-  const { data } = await Tesseract.recognize(file, lang, {
-    logger: (m) => {
-      // m.progress is 0..1 for some stages
-      if (typeof m.progress === "number") {
-        // overall-ish progress: allocate by file index
-        const perFile = 100 / total;
-        const base = perFile * index;
-        const pct = base + perFile * (m.progress * 100) / 100;
-        setProgress(pct);
-      }
-    },
-    // config variables
-    // Note: Tesseract.js v5 supports passing "config" as 4th param in some patterns,
-    // but it also accepts it inside options in many builds.
-  }).catch((err) => {
-    console.error(err);
-    appendOutput(`[Error reading ${file.name}]`);
-    return null;
-  });
-
-  return data?.text || "";
-}
-
-async function handleFiles(files) {
-  if (busy) return;
-  const list = Array.from(files || []).filter(f => f.type.startsWith("image/"));
-  if (!list.length) {
-    setStatus("No image files detected.");
-    return;
-  }
-
-  busy = true;
-  fileCount.textContent = `${list.length} file(s)`;
-  setProgress(0);
-  setStatus("Starting OCR...");
-
-  // Apply PSM config (best effort)
-  const psmConfig = getPSMConfig();
-  // Tesseract.js exposes a global worker API too, but recognize() is simplest for GitHub Pages.
-  // We’ll set config by temporarily patching recognize via "Tesseract.setLogging" is not for config.
-  // So: we pass config using "Tesseract.recognize(image, lang, { ... , tessedit_pageseg_mode })"
-  // Many builds pass unknown keys to the engine; we include it.
-  for (let i = 0; i < list.length; i++) {
-    const file = list[i];
-    const { data } = await Tesseract.recognize(file, langSel.value, {
-      ...psmConfig,
-      logger: (m) => {
-        if (typeof m.progress === "number") {
-          const perFile = 100 / list.length;
-          const base = perFile * i;
-          const pct = base + perFile * m.progress;
-          setProgress(pct);
-        }
-      },
-    }).catch((err) => {
-      console.error(err);
-      appendOutput(`[Error reading ${file.name}]`);
-      return { data: { text: "" } };
-    });
-
-    const text = data?.text || "";
-    const header = `FILE: ${file.name}\n`;
-    appendOutput(header + text);
-  }
-
-  setProgress(100);
-  setStatus("Done.");
-  busy = false;
-}
-
 function prevent(e) {
   e.preventDefault();
   e.stopPropagation();
 }
 
-// Drag/drop events
-["dragenter", "dragover"].forEach(evt => {
-  dropzone.addEventListener(evt, (e) => {
-    prevent(e);
-    dropzone.classList.add("dragover");
-  });
-});
-["dragleave", "drop"].forEach(evt => {
-  dropzone.addEventListener(evt, (e) => {
-    prevent(e);
-    dropzone.classList.remove("dragover");
-  });
-});
-dropzone.addEventListener("drop", (e) => {
-  const files = e.dataTransfer?.files;
-  handleFiles(files);
-});
-
-// Click to browse
-browseBtn.addEventListener("click", () => fileInput.click());
-dropzone.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", () => handleFiles(fileInput.files));
-
-// Paste image from clipboard
-window.addEventListener("paste", (e) => {
-  const items = e.clipboardData?.items || [];
-  const files = [];
-  for (const it of items) {
-    if (it.type && it.type.startsWith("image/")) {
-      const f = it.getAsFile();
-      if (f) files.push(f);
-    }
-  }
-  if (files.length) handleFiles(files);
-});
-
-// Buttons
-copyBtn.addEventListener("click", async () => {
+// ---------- Image preprocessing (big accuracy boost for screenshots) ----------
+async function fileToImageBitmap(file) {
+  const blobURL = URL.createObjectURL(file);
   try {
-    await navigator.clipboard.writeText(out.value);
-    setStatus("Copied to clipboard.");
-  } catch {
-    setStatus("Copy failed (browser permission).");
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = blobURL;
+    });
+    // ImageBitmap gives better draw performance when available
+    if ("createImageBitmap" in window) {
+      return await createImageBitmap(img);
+    }
+    return img;
+  } finally {
+    URL.revokeObjectURL(blobURL);
   }
-});
+}
 
-downloadBtn.addEventListener("click", () => {
-  const blob = new Blob([out.value || ""], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "ocr-output.txt";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-});
+/**
+ * Preprocess screenshot to help OCR:
+ * - upscale 2x
+ * - grayscale
+ * - contrast boost
+ * - binarize (threshold)
+ * Returns a dataURL (PNG) for OCR.
+ */
+async function preprocessImageForOCR(file) {
+  const img = await fileToImageBitmap(file);
 
-clearBtn.addEventListener("click", () => {
-  out.value = "";
-  setProgress(0);
-  fileCount.textContent = "";
-  setStatus("Idle");
-});
+  const scale = 2.0; // 2x upscale helps small UI text a lot
+  const w = Math.floor(img.width * scale);
+  const h = Math.floor(img.height * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  // Draw upscaled
+  ctx.drawImage(img, 0, 0, w, h);
+
+  // Pixel ops
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+
+  // Tuned for screenshots: slight contrast + threshold
+  const contrast = 1.25; // >1 increases contrast
+  const threshold = 175; // binarize cutoff
+
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+
+    // grayscale (luma)
+    let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+    // contrast around mid-point 128
+    y = (y - 128) * contrast + 128;
+
+    // binarize
+    const v = y >= threshold ? 255 : 0;
+
+    d[i] = v;
+    d[i + 1] = v;
+    d[i + 2] = v;
+    // alpha unchanged
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+// ---------- OCR cleanup (fix the garbage you saw: ¥, ©, fake radio circles, etc.) ----------
+function cleanOCRText(raw) {
+  if (!raw) return "";
+
+  let t = raw;
+
+  // Normalize weird characters that show up in UI screenshots
+  t = t.replace(/[¥©®™]/g, "");              // remove common junk symbols
+  t = t.replace(/[•·]/g, "-");               // normalize bullets
+
+  // Remove fake radio-button circles often recognized as "O" at line starts
+  // Examples: "O static" -> "static"
+  t = t.replace(/^\s*[O0○◯]\s+/gm, "");
+
+  // Sometimes OCR produces "© Anonymous" etc.
+  t = t.replace(/^\s*[©]\s+/gm, "");
+
+  // Remove isolated lines that are only junk
+  t = t.replace(/^\s*[$¥©]+?\s*$/gm, "");
+
+  // Fix common brace/indent issues lightly
+  t = t.replace(/\r/g, "");
+  t = t.replace(/[ \t]+\n/g, "\n");          // trailing whitespace
+  t = t.replace(/\n{3,}/g, "\n\n");          // collapse huge gaps
+
+  // Fix "}" lines sometimes duplicated as weird chars
+  t = t.replace(/^[^\S\n]*[|\\\/]{1,}[^\S\n]*$/gm, "");
+
+  return t.trim();
+}
+
+// ---------- Quiz answer detection (rule-based, no hallucinating) ----------
+function detectQuizAnswer(cleanedText) {
+  // If user turned it off
+  if (quizDetectSel.value !== "on") return null;
+
+  const text = cleanedText.toLowerCase();
+
+  // Must look like a question
+  const hasQuestion = cleanedText.includes("?") || /what\b.*\b(type|kind)\b/.test(text);
+  if (!hasQuestion) return null;
+
+  // Extract choices if they exist (we look for common MCQ words)
+  // NOTE: this is intentionally conservative
+  const possibleChoices = extractChoices(cleanedText);
+
+  // ---- Java-specific pattern: local class inside a method ----
+  // Example:
+  // public void printLabel() { class ProductCode {} ... }
+  const localClassPattern =
+    /public\s+void\s+\w+\s*\([^)]*\)\s*\{[\s\S]*?\bclass\s+\w+\b[\s\S]*?\}/i.test(cleanedText) &&
+    /\bclass\s+\w+\b\s*\{\s*\}/i.test(cleanedText);
+
+  if (localClassPattern) {
+    const answer = pickChoice(possibleChoices, ["local"]);
+    return {
+      answer: answer || "Local",
+      why: "The class is declared inside a method body, which makes it a local (method-local) class in Java."
+    };
+  }
+
+  // ---- Java-specific: anonymous class pattern ----
+  // new InterfaceOrClass() { ... }
+  const anonymousPattern = /\bnew\s+\w+\s*\([^)]*\)\s*\{\s*[\s\S]*?\}/i.test(cleanedText);
+  if (anonymousPattern) {
+    const answer = pickChoice(possibleChoices, ["anonymous"]);
+    return {
+      answer: answer || "Anonymous",
+      why: "An anonymous class is created with `new Type(){ ... }` (a class body with no declared class name)."
+    };
+  }
+
+  // ---- Java-specific: static nested class pattern ----
+  const staticNestedPattern = /\bstatic\s+class\s+\w+\b/i.test(cleanedText);
+  if (staticNestedPattern) {
+    const answer = pickChoice(possibleChoices, ["static"]);
+    return {
+      answer: answer || "Static",
+      why: "A static nested class is declared with `static class Name { ... }`."
+    };
+  }
+
+  // If we can’t be sure, return null (don’t guess)
+  return null;
+}
+
+function extractChoices(cleanedText) {
+  // Grab short lines that look like options.
+  // We also scan the entire text for common option words.
+  const lines = cleanedText.split("\n").map(l => l.trim()).filter(Boolean);
+
+  // Filter out code-like lines
+  const optionish = lines.filter(l => {
+    const lower = l.toLowerCase();
+    if (lower.includes("{") || lower.includes("}") || lower.includes(";")) return false;
+    if (lower.startsWith("class ")) return false;
+    if (lower.startsWith("public ")) return false;
+    if (lower.length > 40) return false; // options usually short
+    return true;
+  });
+
+  // If OCR kept them on one line, attempt to pull known words
+  const known = [];
+  const knownWords = ["static", "local", "anonymous", "shadow", "private", "public", "protected"];
+  for (const w of knownWords) {
+    if (cleanedText.toLowerCase().includes(w)) known.push(w);
+  }
+
+  // Merge: keep unique
+  const all = [...optionish, ...known];
+  const uniq = [];
+  for (const x of all) {
+    const norm = x.toLowerCase();
+    if (!uniq.some(u => u.toLowerCase() === norm)) uniq.push(x);
+  }
+
+  return uniq;
+}
+
+function pickChoice(choices, keywords) {
+  if (!choices || !choices.length) return null;
+  for (const c of choices) {
+    const lc = c.toLowerCase();
+    if (keywords.some(k => lc.includes(k))) return normalizeChoice(c);
+  }
+  return null;
+}
+
+function normalizeChoice(c) {
+  // Capitalize first letter if it’s one word
+  const trimmed = (c || "").trim();
+  if (!trimmed) return trimmed;
+  if (/^[a-z]+$/i.test(trimmed)) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  }
+  return trimmed;
+}
+
+// ---------- Tesseract worker (reuse one worker for speed) ----------
+let worker = null;
+
+async function getWorker(lang) {
+  if (!worker) {
+    worker = await Tesseract.createWorker({
+      logger: (m) => {
+        if (typeof m.progress === "number") {
+          // this is per-image; we handle overall progress outside
+          // leaving here avoids double updates
+        }
+      }
+    });
+  }
+  // load language each time user changes
+  await worker.loadLanguage(lang);
+  await worker.initialize(lang);
+  return worker;
+}
+
+async function recognizeImage(source, lang, psm, onProgress) {
+  const w = await getWorker(lang);
+  // PSM: set page segmentation mode
+  await w.setParameters({
+    tessedit_pageseg_mode: String(psm)
+  });
+
+  const result = await w.recognize(source, {
+    logger: (m) => {
+      if (typeof m.progress === "number") onProgress(m.progress);
+    }
+  });
+
+  return result?.data?.text || "";
+}
+
+// -------
