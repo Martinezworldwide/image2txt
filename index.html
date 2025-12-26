@@ -5,13 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Image → Text (OCR)</title>
   <link rel="stylesheet" href="style.css" />
+
+  <!-- Tesseract.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
   <div class="wrap">
     <header>
-      <h1>Image → Plain Text</h1>
+      <h1>Image → Plain Text (OCR)</h1>
       <p class="sub">Drag screenshots in. OCR runs locally in your browser.</p>
     </header>
 
@@ -28,11 +30,28 @@
       </label>
 
       <label class="row">
-        <span>Output formatting</span>
+        <span>Layout mode (PSM)</span>
         <select id="psm">
-          <option value="AUTO" selected>Auto (good default)</option>
-          <option value="SINGLE_BLOCK">Single block (paragraph)</option>
-          <option value="SINGLE_LINE">Single line</option>
+          <option value="3" selected>Auto (3)</option>
+          <option value="6">Single block (6) — best for code</option>
+          <option value="7">Single line (7)</option>
+          <option value="11">Sparse text (11) — mixed UI sometimes</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <span>Preprocess image</span>
+        <select id="preprocess">
+          <option value="on" selected>On (recommended)</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <span>Auto quiz answer detect</span>
+        <select id="quizDetect">
+          <option value="on" selected>On</option>
+          <option value="off">Off</option>
         </select>
       </label>
     </section>
@@ -42,7 +61,7 @@
       <div class="dropzone-inner">
         <div class="big">Drop screenshots here</div>
         <div class="small">or <button id="browseBtn" class="linkbtn" type="button">browse files</button></div>
-        <div class="hint">Tip: you can also paste an image (Cmd/Ctrl+V).</div>
+        <div class="hint">Tip: paste an image too (Cmd/Ctrl+V).</div>
       </div>
     </section>
 
@@ -56,6 +75,14 @@
       </div>
     </section>
 
+    <section class="result">
+      <div class="result-card">
+        <div class="result-title">Detected Answer</div>
+        <div id="answerText" class="result-answer muted">—</div>
+        <div id="answerWhy" class="result-why muted"></div>
+      </div>
+    </section>
+
     <section class="output">
       <div class="out-actions">
         <button id="copyBtn" type="button">Copy</button>
@@ -66,8 +93,9 @@
     </section>
 
     <footer>
-      <small>Runs in-browser with Tesseract.js. Accuracy depends on image quality.</small>
+      <small>Runs in-browser with Tesseract.js. Screenshot OCR is improved using preprocessing + cleanup.</small>
     </footer>
   </div>
 </body>
 </html>
+
