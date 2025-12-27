@@ -1,62 +1,81 @@
 // app.js
 
-// ---------- UI ----------
-const dropzone = document.getElementById("dropzone");
-const fileInput = document.getElementById("fileInput");
-const browseBtn = document.getElementById("browseBtn");
-
-const out = document.getElementById("out");
-const statusText = document.getElementById("statusText");
-const fileCount = document.getElementById("fileCount");
-const bar = document.getElementById("bar");
-
-const copyBtn = document.getElementById("copyBtn");
-const downloadBtn = document.getElementById("downloadBtn");
-const clearBtn = document.getElementById("clearBtn");
-
-const langSel = document.getElementById("lang");
-const psmSel = document.getElementById("psm");
-const preprocessSel = document.getElementById("preprocess");
-const quizDetectSel = document.getElementById("quizDetect");
-
-const answerText = document.getElementById("answerText");
-const answerWhy = document.getElementById("answerWhy");
-
-let busy = false;
-
-// ---------- Helpers ----------
-function setStatus(text) {
-  statusText.textContent = text;
-}
-function setProgress(pct) {
-  const clamped = Math.max(0, Math.min(100, pct));
-  bar.style.width = `${clamped}%`;
-}
-function setAnswer(ans, why) {
-  if (!ans) {
-    answerText.textContent = "—";
-    answerText.classList.add("muted");
-    answerWhy.textContent = "";
-    answerWhy.classList.add("muted");
-    return;
+// Wait for DOM and Tesseract to be ready
+function waitForTesseract() {
+  if (typeof Tesseract !== "undefined") {
+    initApp();
+  } else {
+    // Tesseract not loaded yet, wait a bit and try again
+    setTimeout(waitForTesseract, 100);
   }
-  answerText.textContent = ans;
-  answerText.classList.remove("muted");
-  answerWhy.textContent = why || "";
-  answerWhy.classList.remove("muted");
-}
-function appendOutput(text) {
-  if (!text) return;
-  const separator = out.value.trim().length ? "\n\n---\n\n" : "";
-  out.value += separator + text.trim();
-}
-function prevent(e) {
-  e.preventDefault();
-  e.stopPropagation();
 }
 
-// ---------- Image preprocessing (big accuracy boost for screenshots) ----------
-async function fileToImageBitmap(file) {
+// Wait for DOM first, then Tesseract
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", waitForTesseract);
+} else {
+  // DOM already loaded
+  waitForTesseract();
+}
+
+function initApp() {
+  // ---------- UI ----------
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const browseBtn = document.getElementById("browseBtn");
+
+  const out = document.getElementById("out");
+  const statusText = document.getElementById("statusText");
+  const fileCount = document.getElementById("fileCount");
+  const bar = document.getElementById("bar");
+
+  const copyBtn = document.getElementById("copyBtn");
+  const downloadBtn = document.getElementById("downloadBtn");
+  const clearBtn = document.getElementById("clearBtn");
+
+  const langSel = document.getElementById("lang");
+  const psmSel = document.getElementById("psm");
+  const preprocessSel = document.getElementById("preprocess");
+  const quizDetectSel = document.getElementById("quizDetect");
+
+  const answerText = document.getElementById("answerText");
+  const answerWhy = document.getElementById("answerWhy");
+
+  let busy = false;
+
+  // ---------- Helpers ----------
+  function setStatus(text) {
+    statusText.textContent = text;
+  }
+  function setProgress(pct) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    bar.style.width = `${clamped}%`;
+  }
+  function setAnswer(ans, why) {
+    if (!ans) {
+      answerText.textContent = "—";
+      answerText.classList.add("muted");
+      answerWhy.textContent = "";
+      answerWhy.classList.add("muted");
+      return;
+    }
+    answerText.textContent = ans;
+    answerText.classList.remove("muted");
+    answerWhy.textContent = why || "";
+    answerWhy.classList.remove("muted");
+  }
+  function appendOutput(text) {
+    if (!text) return;
+    const separator = out.value.trim().length ? "\n\n---\n\n" : "";
+    out.value += separator + text.trim();
+  }
+  function prevent(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  // ---------- Image preprocessing (big accuracy boost for screenshots) ----------
+  async function fileToImageBitmap(file) {
   const blobURL = URL.createObjectURL(file);
   try {
     const img = await new Promise((resolve, reject) => {
@@ -75,10 +94,10 @@ async function fileToImageBitmap(file) {
   }
 }
 
-/**
- * Convert ImageBitmap or Image to dataURL for Tesseract (must be serializable)
- */
-async function imageToDataURL(img) {
+  /**
+   * Convert ImageBitmap or Image to dataURL for Tesseract (must be serializable)
+   */
+  async function imageToDataURL(img) {
   const canvas = document.createElement("canvas");
   canvas.width = img.width;
   canvas.height = img.height;
@@ -87,15 +106,15 @@ async function imageToDataURL(img) {
   return canvas.toDataURL("image/png");
 }
 
-/**
- * Preprocess screenshot to help OCR:
- * - upscale 2x
- * - grayscale
- * - contrast boost
- * - binarize (threshold)
- * Returns a dataURL (PNG) for OCR.
- */
-async function preprocessImageForOCR(file) {
+  /**
+   * Preprocess screenshot to help OCR:
+   * - upscale 2x
+   * - grayscale
+   * - contrast boost
+   * - binarize (threshold)
+   * Returns a dataURL (PNG) for OCR.
+   */
+  async function preprocessImageForOCR(file) {
   const img = await fileToImageBitmap(file);
 
   const scale = 2.0; // 2x upscale helps small UI text a lot
@@ -143,8 +162,8 @@ async function preprocessImageForOCR(file) {
   return canvas.toDataURL("image/png");
 }
 
-// ---------- OCR cleanup (fix the garbage you saw: ¥, ©, fake radio circles, etc.) ----------
-function cleanOCRText(raw) {
+  // ---------- OCR cleanup (fix the garbage you saw: ¥, ©, fake radio circles, etc.) ----------
+  function cleanOCRText(raw) {
   if (!raw) return "";
 
   let t = raw;
@@ -174,8 +193,8 @@ function cleanOCRText(raw) {
   return t.trim();
 }
 
-// ---------- Quiz answer detection (rule-based, no hallucinating) ----------
-function detectQuizAnswer(cleanedText) {
+  // ---------- Quiz answer detection (rule-based, no hallucinating) ----------
+  function detectQuizAnswer(cleanedText) {
   // If user turned it off
   if (quizDetectSel.value !== "on") return null;
 
@@ -229,7 +248,7 @@ function detectQuizAnswer(cleanedText) {
   return null;
 }
 
-function extractChoices(cleanedText) {
+  function extractChoices(cleanedText) {
   // Grab short lines that look like options.
   // We also scan the entire text for common option words.
   const lines = cleanedText.split("\n").map(l => l.trim()).filter(Boolean);
@@ -262,7 +281,7 @@ function extractChoices(cleanedText) {
   return uniq;
 }
 
-function pickChoice(choices, keywords) {
+  function pickChoice(choices, keywords) {
   if (!choices || !choices.length) return null;
   for (const c of choices) {
     const lc = c.toLowerCase();
@@ -271,7 +290,7 @@ function pickChoice(choices, keywords) {
   return null;
 }
 
-function normalizeChoice(c) {
+  function normalizeChoice(c) {
   // Capitalize first letter if it’s one word
   const trimmed = (c || "").trim();
   if (!trimmed) return trimmed;
@@ -281,10 +300,10 @@ function normalizeChoice(c) {
   return trimmed;
 }
 
-// ---------- Tesseract worker (reuse one worker for speed) ----------
-let worker = null;
+  // ---------- Tesseract worker (reuse one worker for speed) ----------
+  let worker = null;
 
-async function getWorker(lang) {
+  async function getWorker(lang) {
   if (!worker) {
     worker = await Tesseract.createWorker({
       logger: (m) => {
@@ -301,7 +320,7 @@ async function getWorker(lang) {
   return worker;
 }
 
-async function recognizeImage(source, lang, psm, onProgress) {
+  async function recognizeImage(source, lang, psm, onProgress) {
   const w = await getWorker(lang);
   // PSM: set page segmentation mode
   await w.setParameters({
@@ -317,8 +336,8 @@ async function recognizeImage(source, lang, psm, onProgress) {
   return result?.data?.text || "";
 }
 
-// ---------- File processing ----------
-async function processFiles(files) {
+  // ---------- File processing ----------
+  async function processFiles(files) {
   if (busy) {
     setStatus("Already processing, please wait...");
     return;
@@ -388,104 +407,105 @@ async function processFiles(files) {
   }
 }
 
-// ---------- Event handlers ----------
-// Handle file input change
-fileInput.addEventListener("change", (e) => {
-  if (e.target.files && e.target.files.length > 0) {
-    processFiles(e.target.files);
-  }
-});
+  // ---------- Event handlers ----------
+  // Handle file input change
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
+    }
+  });
 
-// Handle browse button click
-browseBtn.addEventListener("click", () => {
-  fileInput.click();
-});
+  // Handle browse button click
+  browseBtn.addEventListener("click", () => {
+    fileInput.click();
+  });
 
-// Handle drag and drop
-dropzone.addEventListener("dragover", (e) => {
-  prevent(e);
-  dropzone.classList.add("dragover");
-});
+  // Handle drag and drop
+  dropzone.addEventListener("dragover", (e) => {
+    prevent(e);
+    dropzone.classList.add("dragover");
+  });
 
-dropzone.addEventListener("dragleave", (e) => {
-  prevent(e);
-  dropzone.classList.remove("dragover");
-});
+  dropzone.addEventListener("dragleave", (e) => {
+    prevent(e);
+    dropzone.classList.remove("dragover");
+  });
 
-dropzone.addEventListener("drop", (e) => {
-  prevent(e);
-  dropzone.classList.remove("dragover");
-  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    processFiles(e.dataTransfer.files);
-  }
-});
+  dropzone.addEventListener("drop", (e) => {
+    prevent(e);
+    dropzone.classList.remove("dragover");
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(e.dataTransfer.files);
+    }
+  });
 
-// Handle paste event
-document.addEventListener("paste", (e) => {
-  const items = e.clipboardData?.items;
-  if (!items) return;
+  // Handle paste event
+  document.addEventListener("paste", (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
 
-  const imageFiles = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (item.type.startsWith("image/")) {
-      const file = item.getAsFile();
-      if (file) {
-        imageFiles.push(file);
+    const imageFiles = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFiles.push(file);
+        }
       }
     }
-  }
 
-  if (imageFiles.length > 0) {
-    prevent(e);
-    processFiles(imageFiles);
-  }
-});
+    if (imageFiles.length > 0) {
+      prevent(e);
+      processFiles(imageFiles);
+    }
+  });
 
-// Handle copy button
-copyBtn.addEventListener("click", async () => {
-  if (!out.value.trim()) {
-    setStatus("Nothing to copy");
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(out.value);
-    setStatus("Copied to clipboard!");
-  } catch (err) {
-    console.error("Copy failed:", err);
-    setStatus("Copy failed");
-  }
-});
+  // Handle copy button
+  copyBtn.addEventListener("click", async () => {
+    if (!out.value.trim()) {
+      setStatus("Nothing to copy");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(out.value);
+      setStatus("Copied to clipboard!");
+    } catch (err) {
+      console.error("Copy failed:", err);
+      setStatus("Copy failed");
+    }
+  });
 
-// Handle download button
-downloadBtn.addEventListener("click", () => {
-  if (!out.value.trim()) {
-    setStatus("Nothing to download");
-    return;
-  }
-  const blob = new Blob([out.value], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "ocr-output.txt";
-  a.click();
-  URL.revokeObjectURL(url);
-  setStatus("Downloaded!");
-});
+  // Handle download button
+  downloadBtn.addEventListener("click", () => {
+    if (!out.value.trim()) {
+      setStatus("Nothing to download");
+      return;
+    }
+    const blob = new Blob([out.value], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ocr-output.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus("Downloaded!");
+  });
 
-// Handle clear button
-clearBtn.addEventListener("click", () => {
-  out.value = "";
-  setAnswer(null);
-  setStatus("Cleared");
-  setProgress(0);
-  fileCount.textContent = "";
-});
+  // Handle clear button
+  clearBtn.addEventListener("click", () => {
+    out.value = "";
+    setAnswer(null);
+    setStatus("Cleared");
+    setProgress(0);
+    fileCount.textContent = "";
+  });
 
-// Handle dropzone click (focus for keyboard)
-dropzone.addEventListener("click", (e) => {
-  // Only trigger file input if clicking directly on dropzone, not on buttons
-  if (e.target === dropzone || e.target.closest(".dropzone-inner")) {
-    fileInput.click();
-  }
-});
+  // Handle dropzone click (focus for keyboard)
+  dropzone.addEventListener("click", (e) => {
+    // Only trigger file input if clicking directly on dropzone, not on buttons
+    if (e.target === dropzone || e.target.closest(".dropzone-inner")) {
+      fileInput.click();
+    }
+  });
+}
