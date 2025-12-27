@@ -305,4 +305,173 @@ async function recognizeImage(source, lang, psm, onProgress) {
   return result?.data?.text || "";
 }
 
-// -------
+// ---------- File processing ----------
+async function processFiles(files) {
+  if (busy) {
+    setStatus("Already processing, please wait...");
+    return;
+  }
+
+  // Filter to images only
+  const imageFiles = Array.from(files).filter(f => f.type.startsWith("image/"));
+  if (imageFiles.length === 0) {
+    setStatus("No image files found");
+    return;
+  }
+
+  busy = true;
+  setStatus(`Processing ${imageFiles.length} image(s)...`);
+  setProgress(0);
+  fileCount.textContent = `${imageFiles.length} file(s)`;
+
+  try {
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      const progressPerFile = 100 / imageFiles.length;
+      const baseProgress = i * progressPerFile;
+
+      setStatus(`Processing ${i + 1}/${imageFiles.length}: ${file.name}`);
+
+      // Preprocess if enabled
+      let source;
+      if (preprocessSel.value === "on") {
+        source = await preprocessImageForOCR(file);
+      } else {
+        source = await fileToImageBitmap(file);
+      }
+
+      // Run OCR
+      const rawText = await recognizeImage(
+        source,
+        langSel.value,
+        parseInt(psmSel.value),
+        (pct) => {
+          // Update progress: base progress + this file's progress
+          setProgress(baseProgress + (pct * progressPerFile / 100));
+        }
+      );
+
+      // Clean up OCR text
+      const cleanedText = cleanOCRText(rawText);
+      appendOutput(cleanedText);
+
+      // Detect quiz answer if enabled
+      const answer = detectQuizAnswer(cleanedText);
+      if (answer) {
+        setAnswer(answer.answer, answer.why);
+      }
+
+      setProgress((i + 1) * progressPerFile);
+    }
+
+    setStatus(`Done! Processed ${imageFiles.length} image(s)`);
+  } catch (err) {
+    console.error("Error processing files:", err);
+    setStatus(`Error: ${err.message}`);
+    appendOutput(`\n\n[Error processing: ${err.message}]`);
+  } finally {
+    busy = false;
+  }
+}
+
+// ---------- Event handlers ----------
+// Handle file input change
+fileInput.addEventListener("change", (e) => {
+  if (e.target.files && e.target.files.length > 0) {
+    processFiles(e.target.files);
+  }
+});
+
+// Handle browse button click
+browseBtn.addEventListener("click", () => {
+  fileInput.click();
+});
+
+// Handle drag and drop
+dropzone.addEventListener("dragover", (e) => {
+  prevent(e);
+  dropzone.classList.add("dragover");
+});
+
+dropzone.addEventListener("dragleave", (e) => {
+  prevent(e);
+  dropzone.classList.remove("dragover");
+});
+
+dropzone.addEventListener("drop", (e) => {
+  prevent(e);
+  dropzone.classList.remove("dragover");
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    processFiles(e.dataTransfer.files);
+  }
+});
+
+// Handle paste event
+document.addEventListener("paste", (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  const imageFiles = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) {
+        imageFiles.push(file);
+      }
+    }
+  }
+
+  if (imageFiles.length > 0) {
+    prevent(e);
+    processFiles(imageFiles);
+  }
+});
+
+// Handle copy button
+copyBtn.addEventListener("click", async () => {
+  if (!out.value.trim()) {
+    setStatus("Nothing to copy");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(out.value);
+    setStatus("Copied to clipboard!");
+  } catch (err) {
+    console.error("Copy failed:", err);
+    setStatus("Copy failed");
+  }
+});
+
+// Handle download button
+downloadBtn.addEventListener("click", () => {
+  if (!out.value.trim()) {
+    setStatus("Nothing to download");
+    return;
+  }
+  const blob = new Blob([out.value], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "ocr-output.txt";
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus("Downloaded!");
+});
+
+// Handle clear button
+clearBtn.addEventListener("click", () => {
+  out.value = "";
+  setAnswer(null);
+  setStatus("Cleared");
+  setProgress(0);
+  fileCount.textContent = "";
+});
+
+// Handle dropzone click (focus for keyboard)
+dropzone.addEventListener("click", (e) => {
+  // Only trigger file input if clicking directly on dropzone, not on buttons
+  if (e.target === dropzone || e.target.closest(".dropzone-inner")) {
+    fileInput.click();
+  }
+});
