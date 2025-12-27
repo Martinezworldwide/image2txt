@@ -76,6 +76,18 @@ async function fileToImageBitmap(file) {
 }
 
 /**
+ * Convert ImageBitmap or Image to dataURL for Tesseract (must be serializable)
+ */
+async function imageToDataURL(img) {
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+/**
  * Preprocess screenshot to help OCR:
  * - upscale 2x
  * - grayscale
@@ -332,12 +344,14 @@ async function processFiles(files) {
 
       setStatus(`Processing ${i + 1}/${imageFiles.length}: ${file.name}`);
 
-      // Preprocess if enabled
+      // Preprocess if enabled, otherwise convert to dataURL (required for Tesseract worker)
       let source;
       if (preprocessSel.value === "on") {
         source = await preprocessImageForOCR(file);
       } else {
-        source = await fileToImageBitmap(file);
+        // Convert ImageBitmap/Image to dataURL so it can be cloned for the worker
+        const img = await fileToImageBitmap(file);
+        source = await imageToDataURL(img);
       }
 
       // Run OCR
